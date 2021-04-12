@@ -1,0 +1,91 @@
+---
+title: "CSS validation in GSE13507"
+author: "Jessica Scarborough"
+date: "4/12/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Load Packages
+
+```{r load_packages}
+
+library(GEOquery)
+library(here)
+library(affy)
+library(umap)
+library(limma)
+library(tidyverse)
+
+```
+
+
+## Access Data and RMA normalize
+
+```{r get_data}
+
+# load series and platform data from GEO
+
+gset <- getGEO("GSE13507", GSEMatrix =TRUE, getGPL=FALSE)
+if (length(gset) > 1) idx <- grep("GPL6102", attr(gset, "names")) else idx <- 1
+gset <- gset[[idx]]
+
+```
+
+
+## RMA Normalization
+
+```{r rma_normalize}
+
+ex <- exprs(gset)
+# log2 transform
+qx <- as.numeric(quantile(ex, c(0., 0.25, 0.5, 0.75, 0.99, 1.0), na.rm=T))
+LogC <- (qx[5] > 100) ||
+          (qx[6]-qx[1] > 50 && qx[2] > 0)
+if (LogC) { ex[which(ex <= 0)] <- NaN
+  ex <- log2(ex) }
+
+ex <- data.frame(ex) %>%
+  rownames_to_column("Probe_ID")
+
+write.csv(ex, file = paste0(here("GSE Data", "GSE13507"), "/GSE13507_rma_normalized.csv"))
+
+
+```
+
+
+### Normalization check
+
+We're going to do a quick check to make sure that our dataset has been normalized. Each sample should now have a very similar distribution for each gene, which we can see in our violin plot below. 
+
+```{r test_normalize}
+
+test_set <- data.frame(ex[ , 2:6])
+test_long <- test_set %>% 
+  pivot_longer(cols = everything())
+
+g <- ggplot(test_long, aes(x = name, y = value))
+g + geom_violin() +
+  labs(x = "Gene")
+
+```
+
+
+## Annotate
+
+Let's connect the probes to gene names.
+
+```{r annotate}
+
+meta_data <- read.csv(here("GSE Data", "GSE13507", "GPL6102-11574.csv"))
+id_names <- meta_data %>%
+  select(ID, Entrez_Gene_ID)
+
+test <- merge(ex, id_names, on)
+
+?merge
+
+```
